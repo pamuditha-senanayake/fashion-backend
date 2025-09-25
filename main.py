@@ -7,11 +7,16 @@ from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from openai.types.responses import ResponseTextDeltaEvent
 from agents import Runner
+from components.db_utils import fetch_fashion_data
+from components.predictor import TrendPredictor, predict_missing_scores
+from components.forecaster import ForecastAgent, train_forecast, forecast_trends
+from components.trend_direction import TrendDirectionAgent, compute_overall_direction
+
 
 # Import modular components
-from components.db_fashion import fetch_fashion_data
-from components.trend_predictor import TrendPredictor
+
 from components.fashion_ai import FashionAI
+
 
 # Load environment variables
 load_dotenv(override=True)
@@ -19,7 +24,8 @@ GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 # Initialize components
 fashion_ai = FashionAI(GEMINI_API_KEY)
-trend_model = TrendPredictor()
+
+
 
 # Initialize FastAPI
 app = FastAPI()
@@ -30,34 +36,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"]
 )
-
-@app.get("/fashion_posts")
-async def get_fashion_posts(limit: int = 50):
-    """
-    Fetch recent fashion posts from PostgreSQL.
-    """
-    df = fetch_fashion_data(limit)
-    return df.to_dict(orient="records")
-
-
-@app.get("/predict_trends")
-async def predict_trends(limit: int = 50):
-    """
-    Fetch posts and predict trend scores using ML.
-    """
-    df = fetch_fashion_data(limit)
-    trend_model.train(df)
-    df = trend_model.predict(df)
-    return df.to_dict(orient="records")
-
-
-@app.get("/analyze_post")
-async def analyze_post(query: str = Query(...)):
-    """
-    Analyze a single post content using Gemini AI (non-streaming).
-    """
-    result_text = fashion_ai.analyze(query)
-    return {"status": "Done", "result": result_text}
 
 
 @app.get("/search")
@@ -77,3 +55,17 @@ async def search_stream(query: str = Query(...)):
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
+@app.get("/predict_trends")
+def get_trends(limit: int = 20):
+    df = fetch_fashion_data(limit=limit)
+    predictor = TrendPredictor().train(df)
+    df = predict_missing_scores(df, predictor)
+    forecast_agent = ForecastAgent()
+    forecast_agent = train_forecast(df, forecast_agent)
+    df_forecast = forecast_trends(df, forecast_agent)
+    direction_agent = TrendDirectionAgent()
+    df = direction_agent.compute_direction(df, score_column='predicted_trend_score')
+    df_final = df.merge(df_forecast, on='trend_name', how='left')
+    df_overall = compute_overall_direction(df_final)
+    # Convert to dict for JSON
+    return df_overall.to_dict(orient='records')
