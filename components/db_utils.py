@@ -3,8 +3,8 @@ import pandas as pd
 from sqlalchemy import create_engine
 
 DB_USER = "pamudithasenanayake"
-DB_PASS = "123"
-DB_HOST = "localhost"
+DB_PASS = "VRKqcVroIXSUBWMzZsx1nxY4iR0YjaVE"
+DB_HOST = "dpg-d3an0jd6ubrc739uf9l0-a.oregon-postgres.render.com"
 DB_NAME = "fashionsite"
 
 engine = create_engine(f"postgresql+psycopg2://{DB_USER}:{DB_PASS}@{DB_HOST}/{DB_NAME}")
