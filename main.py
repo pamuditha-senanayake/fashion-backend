@@ -14,8 +14,13 @@ gemini_client = AsyncOpenAI(
     api_key=GEMINI_API_KEY
 )
 gemini_model = OpenAIChatCompletionsModel(model="gemini-2.0-flash",openai_client=gemini_client)
+
 instructions = "You are a fashion trend expert. Analyze content from social media, blogs, or search results to identify emerging fashion trends. Provide a concise, professional summary highlighting key patterns, colors, styles, and consumer preferences."
-fashion_agent = Agent(name="Gemini Fashion Agent", instructions=instructions, model=gemini_model)
+
+fashion_agent = Agent(
+    name="Gemini Fashion Agent",
+    instructions=instructions,
+    model=gemini_model)
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
