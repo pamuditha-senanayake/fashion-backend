@@ -1,70 +1,33 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
+import os, asyncio, json
+from fastapi import FastAPI, Query
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-import os
 from dotenv import load_dotenv
-from openai import OpenAI
-from starlette.concurrency import run_in_threadpool
+from openai import AsyncOpenAI
+from agents import Agent, Runner, OpenAIChatCompletionsModel
+from openai.types.responses import ResponseTextDeltaEvent
 
-load_dotenv()
-google_api_key = os.getenv("GEMINI_API_KEY")
-if not google_api_key:
-    raise ValueError("GEMINI_API_KEY not found in environment variables!")
-
-gemini = OpenAI(api_key=google_api_key, base_url="https://generativelanguage.googleapis.com/v1beta/openai/")
+load_dotenv(override=True)
+GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY")
+gemini_client = AsyncOpenAI(
+    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+    api_key=GEMINI_API_KEY
+)
+gemini_model = OpenAIChatCompletionsModel(model="gemini-2.0-flash",openai_client=gemini_client)
+instructions = "You are a fashion trend expert. Analyze content from social media, blogs, or search results to identify emerging fashion trends. Provide a concise, professional summary highlighting key patterns, colors, styles, and consumer preferences."
+fashion_agent = Agent(name="Gemini Fashion Agent", instructions=instructions, model=gemini_model)
 
 app = FastAPI()
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-class SearchRequest(BaseModel):
-    query: str
-
-@app.post("/search")
-async def search_fashion(req: SearchRequest):
-    # Step 1: Primary agent - detailed fashion prediction
-    primary_messages = [
-        {"role": "system", "content": "You are a fashion trend prediction assistant."},
-        {"role": "user", "content": req.query}
-    ]
-
-    def call_primary_agent():
-        return gemini.chat.completions.create(
-            model="gemini-2.5-flash",
-            messages=primary_messages,
-            max_tokens=300,
-            temperature=0.7
-        )
-
-    primary_response = await run_in_threadpool(call_primary_agent)
-    primary_answer = primary_response.choices[0].message.content
-
-    # Step 2: Refinement agent - make it concise
-    refine_messages = [
-        {"role": "system", "content": "You are a summarization assistant. Make the response concise and clear."},
-        {"role": "user", "content": primary_answer}
-    ]
-
-    def call_refine_agent():
-        return gemini.chat.completions.create(
-            model="gemini-2.5-flash",
-            messages=refine_messages,
-            max_tokens=150,
-            temperature=0.5
-        )
-
-    refined_response = await run_in_threadpool(call_refine_agent)
-    concise_answer = refined_response.choices[0].message.content
-
-    return {"result": concise_answer}
-
-
-@app.get("/health")
-async def health_check():
-    return {"status": "ok"}
+@app.get("/search")
+async def search_stream(query: str = Query(...)):
+    async def event_stream():
+        yield f"data: {json.dumps({'status': 'Thinking...'})}\n\n"
+        await asyncio.sleep(0.5)
+        result = Runner.run_streamed(fashion_agent, input=query)
+        async for event in result.stream_events():
+            if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
+                yield f"data: {json.dumps({'status': 'Streaming', 'delta': event.data.delta})}\n\n"
+        yield f"data: {json.dumps({'status': 'Done'})}\n\n"
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
