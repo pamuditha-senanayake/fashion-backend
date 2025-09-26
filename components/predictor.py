@@ -1,4 +1,3 @@
-# backend/components/predictor.py
 from sklearn.ensemble import RandomForestRegressor
 
 class TrendPredictor:
