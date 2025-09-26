@@ -1,73 +1,84 @@
 # agents/gallery_agent.py
 import requests
-import os
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
+from pathlib import Path
 
 router = APIRouter()
-#
-# PAGE_ACCESS_TOKEN = os.getenv("FB_PAGE_ACCESS_TOKEN")
-# PAGE_ID = os.getenv("FB_PAGE_ID")  # Your page ID
 
-PAGE_ACCESS_TOKEN = "EAALaVutBE04BPieZC45aYEtcCtDTCnu5O065y75wkt2HCe0bIARMwKmMm5iIUeAozZBXcxzLI0WatpZBJ840ycOQ1lZApmHwTqXPqiyiJMb24h0cpMP9DZBCn5ddTs9IaRr23xtnVuefdZCaYSPeQuXxKZB8k8KZB6yO2ZAuNAuNE4ccVEILpdIgxTr5JcLFrmq9NGyOSxIHd38bRkJnTGBMZBMnscqPdyLEawxugWEwksbOMQ67iUVljekDc4hgZDZD"
+# 👇 Directly insert token & page id (not using env)
+PAGE_ACCESS_TOKEN = "EAALaVutBE04BPvQ2Io2QmTzEqbCsv6BlrbZCNFu5ZClOhZCVdzZBGiXTJZB0L2YPFnBRxTlZC3y41wfTlvxQYK36lFsOEQTCMoq2ZAmx0ri7X0l4kZBslcVluBO2wDLZBDecYZCenIcnkQyuHMA7hsd2TiwGJmDtwSHpaGHhGb5bfSrSQYsZCKfcGzdZBdpmmZAvfVtXVJ3GcUVjBGOAGDiIC8aUzDigsgLcT86wO2ZAOggHMn9CHTgjXsJMHAeUMaegZDZD"
 PAGE_ID = "108389977731191"
 
-DOWNLOAD_FOLDER = "downloads"
-os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
+DOWNLOAD_FOLDER = Path("downloads")
+DOWNLOAD_FOLDER.mkdir(exist_ok=True)
+
 
 @router.get("/fetch_gallery")
-def fetch_gallery(limit: int = 20):
+def fetch_gallery(limit: int = 20, refresh: bool = Query(False)):
     """
-    Fetch latest posts from FB page and return images & links
+    Load images already downloaded in `downloads` folder.
+    If refresh=True, fetch new posts from FB Graph API and download new images.
     """
-    print("Starting fetch_gallery...")  # DEBUG
+    print("[Gallery] Starting fetch_gallery, refresh:", refresh)
 
-    if not PAGE_ACCESS_TOKEN or not PAGE_ID:
-        print("FB credentials missing!")  # DEBUG
-        raise HTTPException(status_code=500, detail="FB credentials not set in environment")
+    # 1️⃣ Load already downloaded images
+    local_images = []
+    for f in DOWNLOAD_FOLDER.glob("*.jpg"):
+        img_id = f.stem.replace("post_", "")
+        local_images.append({
+            "id": img_id,
+            "url": f"/downloads/{f.name}",  # frontend can access via static route
+            "local_path": str(f),
+            "permalink": "#",  # optional, no permalink for old local images
+        })
 
+    # Return only local images if no refresh
+    if not refresh:
+        print(f"[Gallery] Returning {len(local_images)} local images only")
+        return local_images[:limit]
+
+    # 2️⃣ Fetch from FB Graph API
     url = (
         f"https://graph.facebook.com/v23.0/{PAGE_ID}/posts"
         f"?fields=id,message,created_time,permalink_url,full_picture"
         f"&limit={limit}"
         f"&access_token={PAGE_ACCESS_TOKEN}"
     )
-
-    print(f"Requesting URL: {url}")  # DEBUG
+    print("[Gallery] Requesting URL:", url)
 
     try:
         resp = requests.get(url)
-        print(f"Response status code: {resp.status_code}")  # DEBUG
         resp.raise_for_status()
-    except requests.exceptions.RequestException as e:
-        print(f"Request failed: {e}")  # DEBUG
-        raise HTTPException(status_code=500, detail=f"Request failed: {e}")
+    except requests.RequestException as e:
+        raise HTTPException(status_code=400, detail=f"Request failed: {e}")
 
     data = resp.json().get("data", [])
-    print(f"Number of posts fetched: {len(data)}")  # DEBUG
+    new_images = []
 
-    images = []
-
-    for i, post in enumerate(data, start=1):
+    for post in data:
         img_url = post.get("full_picture")
         if img_url:
-            filename = f"{DOWNLOAD_FOLDER}/post_{i}.jpg"
-            try:
-                img_data = requests.get(img_url).content
-                with open(filename, "wb") as f:
-                    f.write(img_data)
-                print(f"Saved image {filename}")  # DEBUG
-            except Exception as e:
-                print(f"Failed to download image {img_url}: {e}")  # DEBUG
-                continue
+            filename = DOWNLOAD_FOLDER / f"post_{post['id']}.jpg"
+            if not filename.exists():  # only download new ones
+                try:
+                    img_data = requests.get(img_url).content
+                    with open(filename, "wb") as f:
+                        f.write(img_data)
+                    print(f"[Gallery] Downloaded {filename}")
+                except Exception as e:
+                    print(f"[Gallery] Failed to download {img_url}: {e}")
+                    continue
 
-            images.append({
+            new_images.append({
                 "id": post["id"],
                 "message": post.get("message"),
-                "url": img_url,
-                "local_path": filename,
+                "url": f"/downloads/{filename.name}",
+                "local_path": str(filename),
                 "permalink": post.get("permalink_url"),
                 "created_time": post.get("created_time"),
             })
 
-    print(f"Total images returned: {len(images)}")  # DEBUG
-    return images
+    # 3️⃣ Combine local and new images (deduplicate by id)
+    combined = {img['id']: img for img in local_images + new_images}
+    print(f"[Gallery] Returning {len(combined)} total images")
+    return list(combined.values())[:limit]

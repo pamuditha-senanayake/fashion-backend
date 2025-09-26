@@ -11,6 +11,8 @@ from fastapi.responses import StreamingResponse
 
 from openai.types.responses import ResponseTextDeltaEvent
 from agents import Runner
+from starlette.staticfiles import StaticFiles
+
 from components import gallery_agent
 from components.orchestrator import FashionTrendOrchestrator
 from components.responsible_ai_agent import ResponsibleAIAgent
@@ -36,6 +38,7 @@ app.add_middleware(
 )
 app.include_router(gallery_agent.router)
 print("Gallery router included.")
+app.mount("/downloads", StaticFiles(directory="downloads"), name="downloads")
 
 @app.get("/search")
 async def search_stream(query: str = Query(...)):
