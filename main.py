@@ -1,5 +1,6 @@
 # backend/main.py
 import os
+from dotenv import load_dotenv
 import asyncio
 import json
 import pandas as pd
@@ -7,14 +8,10 @@ import numpy as np  # <- added for NaN handling
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from dotenv import load_dotenv
+
 from openai.types.responses import ResponseTextDeltaEvent
 from agents import Runner
-
-from components.db_utils import fetch_fashion_data
-from components.predictor import TrendPredictor, predict_missing_scores
-from components.forecaster import ForecastAgent, train_forecast, forecast_trends
-from components.trend_direction import TrendDirectionAgent, compute_overall_direction
+from components import gallery_agent
 from components.orchestrator import FashionTrendOrchestrator
 from components.responsible_ai_agent import ResponsibleAIAgent
 from components.fashion_ai import FashionAI
@@ -27,6 +24,7 @@ GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY")
 fashion_ai = FashionAI(GEMINI_API_KEY)
 orchestrator = FashionTrendOrchestrator(gemini_api_key=GEMINI_API_KEY)
 
+
 # Initialize FastAPI
 app = FastAPI()
 app.add_middleware(
@@ -36,7 +34,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"]
 )
-
+app.include_router(gallery_agent.router)
+print("Gallery router included.")
 
 @app.get("/search")
 async def search_stream(query: str = Query(...)):
