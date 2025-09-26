@@ -1,22 +1,23 @@
+# backend/main.py
 import os
 import asyncio
 import json
+import pandas as pd
+import numpy as np  # <- added for NaN handling
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from openai.types.responses import ResponseTextDeltaEvent
 from agents import Runner
+
 from components.db_utils import fetch_fashion_data
 from components.predictor import TrendPredictor, predict_missing_scores
 from components.forecaster import ForecastAgent, train_forecast, forecast_trends
 from components.trend_direction import TrendDirectionAgent, compute_overall_direction
-
-
-# Import modular components
-
+from components.orchestrator import FashionTrendOrchestrator
+from components.responsible_ai_agent import ResponsibleAIAgent
 from components.fashion_ai import FashionAI
-
 
 # Load environment variables
 load_dotenv(override=True)
@@ -24,8 +25,7 @@ GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 # Initialize components
 fashion_ai = FashionAI(GEMINI_API_KEY)
-
-
+orchestrator = FashionTrendOrchestrator(gemini_api_key=GEMINI_API_KEY)
 
 # Initialize FastAPI
 app = FastAPI()
@@ -55,17 +55,50 @@ async def search_stream(query: str = Query(...)):
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
-@app.get("/predict_trends")
-def get_trends(limit: int = 20):
-    df = fetch_fashion_data(limit=limit)
-    predictor = TrendPredictor().train(df)
-    df = predict_missing_scores(df, predictor)
-    forecast_agent = ForecastAgent()
-    forecast_agent = train_forecast(df, forecast_agent)
-    df_forecast = forecast_trends(df, forecast_agent)
-    direction_agent = TrendDirectionAgent()
-    df = direction_agent.compute_direction(df, score_column='predicted_trend_score')
-    df_final = df.merge(df_forecast, on='trend_name', how='left')
-    df_overall = compute_overall_direction(df_final)
-    # Convert to dict for JSON
-    return df_overall.to_dict(orient='records')
+
+@app.get("/predict_trends_full")
+async def predict_trends_full(limit: int = 20):
+    try:
+        # Run the orchestrator pipeline
+        df_final, _ = await orchestrator.run_pipeline(limit=limit)
+
+        # Keep only one row per trend_name for frontend
+        df_final = df_final.groupby('trend_name').agg({
+            'content': 'first',
+            'hashtags': 'first',
+            'predicted_trend_score': 'mean',
+            'forecasted_trend_score': 'mean',
+            'trendDirection': 'first'
+        }).reset_index()
+
+        # Ensure no NaNs and proper types
+        df_final['predicted_trend_score'] = df_final['predicted_trend_score'].fillna(0.0).astype(float)
+        df_final['forecasted_trend_score'] = df_final['forecasted_trend_score'].fillna(0.0).astype(float)
+        df_final['content'] = df_final['content'].fillna('No description')
+        df_final['trendDirection'] = df_final['trendDirection'].fillna('stable')
+        df_final['hashtags'] = df_final['hashtags'].apply(lambda x: x if isinstance(x, list) else [])
+
+        # Return JSON-safe dictionary
+        return df_final.to_dict(orient='records')
+
+    except Exception as e:
+        return {"error": str(e)}
+
+# backend/main.py (excerpt)
+@app.get("/trends_with_audit")
+async def trends_with_audit(limit: int = 50):
+    try:
+        # Use orchestrator to get consolidated trend data
+        orchestrator_instance = FashionTrendOrchestrator(GEMINI_API_KEY)
+        df_final, _ = await orchestrator_instance.run_pipeline(limit=limit)
+
+        # Run Responsible AI auditing
+        ai_auditor = ResponsibleAIAgent()
+        df_audit = await ai_auditor.audit_trends(df_final)
+
+        # JSON-safe return
+        return df_audit.fillna("").to_dict(orient='records')
+
+    except Exception as e:
+        print("Error in /trends_with_audit:", e)
+        return {"error": str(e)}
