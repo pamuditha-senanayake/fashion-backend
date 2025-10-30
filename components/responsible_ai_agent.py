@@ -80,7 +80,7 @@ class ResponsibleAIAgent:
             )
             print("[DEBUG] Response received from summary agent.")
             content = resp.choices[0].message.content.strip()
-            print(f"[DEBUG] Summary agent output: {content}")
+            # print(f"[DEBUG] Summary agent output: {content}")
             return content
         except Exception:
             print("[ERROR] Failed in _call_summary_agent:")
@@ -103,7 +103,7 @@ class ResponsibleAIAgent:
             traceback.print_exc()
             summary_text = "AI failed to generate summarized audit points."
 
-        print(f"[DEBUG] Final summary_text: {summary_text}")
+        # print(f"[DEBUG] Final summary_text: {summary_text}")
         return pd.DataFrame([{
             "trend_name": "All Trends",
             "ai_audit_notes": summary_text

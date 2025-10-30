@@ -1,4 +1,4 @@
-from orchestrator2 import FashionTrendOrchestrator
+from backend.components.orchestrator2 import FashionTrendOrchestrator
 from responsible_ai_agent import ResponsibleAIAgent
 import asyncio
 

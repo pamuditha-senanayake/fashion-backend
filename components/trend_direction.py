@@ -2,15 +2,14 @@ import pandas as pd
 
 class TrendDirectionAgent:
     """
-    Computes the direction of each trend over time using predicted and forecasted scores.
+    Computes trend directions per row and overall trend per trend_name.
     """
-    def __init__(self, threshold=0.001):
-        # threshold: minimum change to consider as up/down
+    def __init__(self, threshold: float = 0.001):
         self.threshold = threshold
 
-    def compute_direction(self, df, score_column='predicted_trend_score'):
+    def compute_direction(self, df: pd.DataFrame, score_column: str = 'predicted_trend_score'):
         """
-        Adds a 'trend_direction' column based on score change over time per trend.
+        Compute row-level trend direction (change from previous timestamp).
         """
         df = df.sort_values(by=['trend_name', 'timestamp'])
         df['prev_score'] = df.groupby('trend_name')[score_column].shift(1)
@@ -30,40 +29,30 @@ class TrendDirectionAgent:
         df['trend_direction'] = df['trend_direction'].fillna('stable')
         return df
 
+    @staticmethod
+    def compute_overall_direction(df: pd.DataFrame, score_column='forecasted_trend_score',
+                                  up_threshold=0.01, down_threshold=-0.01):
+        """
+        Compute overall trend per trend_name using first vs last forecasted score.
+        """
+        first_last = (
+            df.sort_values(['trend_name', 'timestamp'])
+              .groupby('trend_name')
+              .agg({score_column: ['first', 'last']})
+              .reset_index()
+        )
+        first_last.columns = ['trend_name', 'score_first', 'score_last']
 
-def compute_overall_direction(df, predicted_col='predicted_trend_score',
-                              forecast_col='forecasted_trend_score', threshold=0.001):
-    """
-    Computes overall trend per trend_name using first vs last forecasted-predicted difference.
-    """
-    df_grouped = df.groupby('trend_name').agg({
-        predicted_col: 'mean',
-        forecast_col: 'mean',
-        'timestamp': ['min','max']
-    }).reset_index()
+        first_last['score_change'] = first_last['score_last'] - first_last['score_first']
 
-    df_grouped.columns = ['trend_name', predicted_col, forecast_col, 'start_time', 'end_time']
+        def get_direction(x):
+            # print(x)
+            if x > up_threshold:
+                return 'up'
+            elif x < down_threshold:
+                return 'down'
+            else:
+                return 'stable'
 
-    # Get first and last predicted & forecast scores
-    first_last = df.sort_values(['trend_name','timestamp']).groupby('trend_name').agg({
-        predicted_col: ['first','last'],
-        forecast_col: ['first','last']
-    }).reset_index()
-    first_last.columns = ['trend_name', 'pred_first','pred_last','fc_first','fc_last']
-
-    # Change over time
-    first_last['score_change'] = first_last['fc_last'] - first_last['pred_first']
-
-    def get_direction(x):
-        if x > threshold:
-            return 'up'
-        elif x < -threshold:
-            return 'down'
-        else:
-            return 'stable'
-
-    first_last['trend_direction'] = first_last['score_change'].apply(get_direction)
-
-    # Merge with aggregated scores
-    df_final = df_grouped.merge(first_last[['trend_name','trend_direction']], on='trend_name', how='left')
-    return df_final[['trend_name', predicted_col, forecast_col, 'trend_direction']]
+        first_last['trendDirection'] = first_last['score_change'].apply(get_direction)
+        return first_last[['trend_name', 'score_first', 'score_last', 'trendDirection']]

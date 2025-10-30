@@ -4,8 +4,7 @@ from dotenv import load_dotenv
 import asyncio
 import json
 import pandas as pd
-import numpy as np  # for NaN handling
-from fastapi import FastAPI, Query, Body
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -16,9 +15,11 @@ from agents import Runner
 from starlette.staticfiles import StaticFiles
 
 from components import gallery_agent
-from components.orchestrator2 import run_fashion_trends, fetch_data, predict_scores, forecast_trends_tool, compute_direction, merge, compute_overall
+from components.orchestrator2 import run_fashion_trends
 from components.responsible_ai_agent import ResponsibleAIAgent
 from components.fashion_ai import FashionAI
+from components.trend_direction import TrendDirectionAgent  # <- added import
+from components.trend_utils import get_trend_popularity_over_time
 
 # Load environment variables
 load_dotenv(override=True)
@@ -26,7 +27,6 @@ GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 # Initialize components
 fashion_ai = FashionAI(GEMINI_API_KEY)
-
 
 # Initialize FastAPI
 app = FastAPI()
@@ -49,7 +49,6 @@ async def search_stream(query: str = Query(...)):
         await asyncio.sleep(0.5)
 
         # Streaming runner — DO NOT await
-
         result = Runner.run_streamed(fashion_ai.fashion_manager, input=query)
 
         async for event in result.stream_events():
@@ -60,20 +59,27 @@ async def search_stream(query: str = Query(...)):
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
+
 @app.get("/predict_trends_full")
 async def predict_trends_full(limit: int = 20):
     try:
         # Use the single orchestration function
-        df_final, df_overall = await run_fashion_trends(limit=limit)
+        df_final, _ = await run_fashion_trends(limit=limit)
 
-        # Aggregate by trend_name for frontend
+        # Compute overall trend directions using TrendDirectionAgent
+        agent = TrendDirectionAgent()
+        df_overall = agent.compute_overall_direction(df_final, score_column='forecasted_trend_score',
+                                                     up_threshold=0.01, down_threshold=-0.01)
+
+        # Merge overall directions back to df_final for frontend
         df_final = df_final.groupby('trend_name').agg({
             'content': 'first',
             'hashtags': 'first',
             'predicted_trend_score': 'mean',
-            'forecasted_trend_score': 'mean',
-            'trendDirection': 'first'
+            'forecasted_trend_score': 'mean'
         }).reset_index()
+
+        df_final = pd.merge(df_final, df_overall[['trend_name', 'trendDirection']], on='trend_name', how='left')
 
         # Fill missing values and normalize types
         df_final['predicted_trend_score'] = df_final['predicted_trend_score'].fillna(0.0).astype(float)
@@ -82,11 +88,13 @@ async def predict_trends_full(limit: int = 20):
         df_final['trendDirection'] = df_final['trendDirection'].fillna('stable')
         df_final['hashtags'] = df_final['hashtags'].apply(lambda x: x if isinstance(x, list) else [])
 
+        # print("values", df_final['trendDirection'])
         return df_final.to_dict(orient='records')
 
     except Exception as e:
         print(f"Error in /predict_trends_full: {e}")
         return {"error": str(e)}
+
 
 # --- Pydantic models ---
 class TrendItem(BaseModel):
@@ -100,6 +108,7 @@ class TrendItem(BaseModel):
 
 class AuditRequest(BaseModel):
     trends: List[TrendItem]
+
 
 
 # --- Fixed endpoint for frontend sending { trends: [...] } ---
@@ -122,3 +131,8 @@ async def audit_trends(request: AuditRequest):
     except Exception as e:
         print("[ERROR] Exception in /audit_trends:", e)
         return {"error": str(e)}
+
+@app.get("/trend_popularity_over_time")
+def trend_popularity(trend_names: str = None):
+    return get_trend_popularity_over_time(trend_names)
+

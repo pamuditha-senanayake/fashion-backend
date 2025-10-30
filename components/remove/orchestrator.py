@@ -7,10 +7,10 @@ from agents import Agent, Runner, function_tool, trace
 from openai import AsyncOpenAI
 from openai.types.responses import ResponseTextDeltaEvent
 
-from .db_utils import fetch_fashion_data
-from .predictor import TrendPredictor, predict_missing_scores
-from .forecaster import ForecastAgent, train_forecast, forecast_trends
-from .trend_direction import TrendDirectionAgent, compute_overall_direction
+from backend.components.db_utils import fetch_fashion_data
+from backend.components.predictor import TrendPredictor, predict_missing_scores
+from backend.components.forecaster import ForecastAgent, train_forecast, forecast_trends
+from backend.components.trend_direction import TrendDirectionAgent, compute_overall_direction
 
 #%%
 load_dotenv(override=True)

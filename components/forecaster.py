@@ -1,5 +1,7 @@
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import pandas as pd
+import numpy as np
 
 class ForecastAgent:
     def __init__(self):
@@ -30,14 +32,36 @@ class ForecastAgent:
 
 def train_forecast(df: pd.DataFrame, agent: ForecastAgent) -> ForecastAgent:
     """
-    Train the forecast agent model on prepared features.
+    Train the forecast agent model on prepared features and print performance.
     """
     df = agent.prepare_features(df)
     features = [
         'prev_score','prev_score2','prev_score3',
         'likes','shares','comments','rolling_mean','rolling_std'
     ]
-    agent.model.fit(df[features], df['trend_score'])
+
+    # Train model
+    X = df[features]
+    y = df['trend_score']
+    agent.model.fit(X, y)
+
+    # Predict on training data for evaluation
+    y_pred = agent.model.predict(X)
+
+    # Compute metrics
+    rmse = np.sqrt(mean_squared_error(y, y_pred))
+    mae = mean_absolute_error(y, y_pred)
+    r2 = r2_score(y, y_pred)
+
+    # Print Model Performance Table
+    print("\n=== RandomForest Forecasting Model Performance ===")
+    print(f"{'Metric':<10} | {'Value':>10}")
+    print("-" * 25)
+    print(f"{'RMSE':<10} | {rmse:>10.4f}")
+    print(f"{'MAE':<10} | {mae:>10.4f}")
+    print(f"{'R2':<10} | {r2:>10.4f}")
+    print("=" * 25 + "\n")
+
     return agent
 
 def forecast_trends(df: pd.DataFrame, agent: ForecastAgent) -> pd.DataFrame:

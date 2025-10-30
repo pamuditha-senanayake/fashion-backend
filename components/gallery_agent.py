@@ -5,9 +5,10 @@ from pathlib import Path
 
 router = APIRouter()
 
-# 👇 Directly insert token & page id (not using env)
-PAGE_ACCESS_TOKEN = "EAALaVutBE04BPg9ZCSOVAWGu3dMUYrlKUzobWU2pg4qxAVVv2Rlr7AMlxYCQECSbEZBJAuK59JgiteGP1uM1WZAaFWZCZCC1pXY3NLItxP5DCQ6FW9UOZA4dtQhBAIhwP4lcgYTP1o5rtzv2xww5YeEX3sZAcKL7sOQz9ZBFOvPZBZCdYHKpzpenZBClMNgpaft4EZBZBp8bhDNphMWMhTDlRW6JHzxDZBOvxaBXxtqsQeVd12SJg692tEH05rSAZDZD"
+
+PAGE_ACCESS_TOKEN = "EAALaVutBE04BPjOkX6uD3G1E269CXWbFxFVfyIFf0DxdiDeWoNZCi5C2ZAzt0jbXpwC3WnYISAFBR41M5gQpdSUfiPv6n1irOYrAtE8jDEgg1fYmvV04BH4YRdVDXJQL6ertuILJJOCd9UEvDZCtIvqEsoXPGJQnCBb9ewP4GW9iDaPZBincm482PNLZBvgr2zYWubAEqwYBmLNtmbT1MgXat84XQZC302lpkpmznyJ0jZBL4fZC5wWEcVYaXAZDZD"
 PAGE_ID = "108389977731191"
+
 
 DOWNLOAD_FOLDER = Path("downloads")
 DOWNLOAD_FOLDER.mkdir(exist_ok=True)
@@ -32,7 +33,7 @@ def fetch_gallery(limit: int = 20, refresh: bool = Query(False)):
             "permalink": "#",  # optional, no permalink for old local images
         })
 
-    # Return only local images if no refresh
+
     if not refresh:
         print(f"[Gallery] Returning {len(local_images)} local images only")
         return local_images[:limit]
